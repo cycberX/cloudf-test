@@ -11,7 +11,7 @@
   "kv_namespaces": [
     {
       "binding": "TEST_NAMESPACE",
-      "id": "your-kv-namespace-id"
+      "id": "02e0a49d11e64c6388e2eb760f0cc802"
     }
   ],
   "observability": {
