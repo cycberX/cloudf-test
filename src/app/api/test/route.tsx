@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 
 // Define the data interface
 interface Data {
@@ -8,8 +6,9 @@ interface Data {
   age: number;
 }
 
-// Define the file path for storing data
-const dataFilePath = path.join(process.cwd(), 'public/data.json');
+// Cloudflare Workers KV namespace binding
+const namespaceKey = process.env.TEST_NAMESPACE;
+const KV_NAMESPACE = namespaceKey ? (globalThis as any)[namespaceKey] : undefined; // This comes from the environment variables
 
 // API route handler for POST requests
 export async function POST(req: NextRequest) {
@@ -22,38 +21,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Invalid data' }, { status: 400 });
     }
 
-    // Read existing data from the JSON file
+    // Fetch existing data from KV
+    if (!KV_NAMESPACE) {
+      return NextResponse.json({ message: 'KV namespace not configured' }, { status: 500 });
+    }
+    const existingData = await KV_NAMESPACE.get("data");
     let fileData: Data[] = [];
-    if (fs.existsSync(dataFilePath)) {
-      const fileContents = fs.readFileSync(dataFilePath, 'utf-8');
-      fileData = JSON.parse(fileContents);
+    
+    // If data exists, parse it; otherwise, start with an empty array
+    if (existingData) {
+      fileData = JSON.parse(existingData);
     }
 
     // Add the new data to the array
     fileData.push(newData);
 
-    // Write the updated data back to the JSON file
-    fs.writeFileSync(dataFilePath, JSON.stringify(fileData, null, 2));
+    // Store the updated data in KV
+    await KV_NAMESPACE.put("data", JSON.stringify(fileData));
 
     // Return the updated data as a JSON response
     return NextResponse.json(fileData, { status: 200 });
   } catch (error) {
-    console.error('Error writing to file:', error);
+    console.error('Error writing to KV:', error);
     return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
   }
 }
 
-// For other HTTP methods (e.g., GET, PUT), add custom handling if needed
+// API route handler for GET requests
 export async function GET(req: NextRequest) {
   try {
-    let fileData: Data[] = [];
-    if (fs.existsSync(dataFilePath)) {
-      const fileContents = fs.readFileSync(dataFilePath, 'utf-8');
-      fileData = JSON.parse(fileContents);
+    // Fetch the data from KV
+    const fileData = await KV_NAMESPACE.get("data");
+
+    // If data exists, return it; otherwise, return an empty array
+    if (fileData) {
+      return NextResponse.json(JSON.parse(fileData), { status: 200 });
+    } else {
+      return NextResponse.json([], { status: 200 });
     }
-    return NextResponse.json(fileData, { status: 200 });
   } catch (error) {
-    console.error('Error reading file:', error);
+    console.error('Error reading from KV:', error);
     return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
   }
 }
