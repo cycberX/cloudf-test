@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { promises as fs } from 'fs';
+import path from 'path';
 
 // Define the data interface
 interface Data {
@@ -6,14 +8,13 @@ interface Data {
   age: number;
 }
 
-// Cloudflare Workers KV namespace binding
-const namespaceKey = process.env.TEST_NAMESPACE;
-const KV_NAMESPACE = namespaceKey ? (globalThis as any)[namespaceKey] : undefined; // This comes from the environment variables
+// Path to the JSON file
+const filePath = path.join(process.cwd(), 'public', 'data.json');
 
 // API route handler for POST requests
 export async function POST(req: NextRequest) {
   try {
-    // Parse the incoming request body (Next.js 15 uses new NextRequest)
+    // Parse the incoming request body
     const newData: Data = await req.json();
 
     // Validate the data
@@ -21,28 +22,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Invalid data' }, { status: 400 });
     }
 
-    // Fetch existing data from KV
-    if (!KV_NAMESPACE) {
-      return NextResponse.json({ message: 'KV namespace not configured' }, { status: 500 });
-    }
-    const existingData = await KV_NAMESPACE.get("data");
+    // Read existing data from the JSON file
     let fileData: Data[] = [];
-    
-    // If data exists, parse it; otherwise, start with an empty array
-    if (existingData) {
+    try {
+      const existingData = await fs.readFile(filePath, 'utf-8');
       fileData = JSON.parse(existingData);
+    } catch (error) {
+      console.warn('No existing file found, creating a new one.');
     }
 
     // Add the new data to the array
     fileData.push(newData);
 
-    // Store the updated data in KV
-    await KV_NAMESPACE.put("data", JSON.stringify(fileData));
+    // Save the updated data back to the JSON file
+    await fs.writeFile(filePath, JSON.stringify(fileData, null, 2), 'utf-8');
 
-    // Return the updated data as a JSON response
+    // Return the updated data
     return NextResponse.json(fileData, { status: 200 });
   } catch (error) {
-    console.error('Error writing to KV:', error);
+    console.error('Error writing to file:', error);
     return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
   }
 }
@@ -50,17 +48,13 @@ export async function POST(req: NextRequest) {
 // API route handler for GET requests
 export async function GET(req: NextRequest) {
   try {
-    // Fetch the data from KV
-    const fileData = await KV_NAMESPACE.get("data");
+    // Read data from the JSON file
+    const fileData = await fs.readFile(filePath, 'utf-8');
 
-    // If data exists, return it; otherwise, return an empty array
-    if (fileData) {
-      return NextResponse.json(JSON.parse(fileData), { status: 200 });
-    } else {
-      return NextResponse.json([], { status: 200 });
-    }
+    // Parse and return the data
+    return NextResponse.json(JSON.parse(fileData), { status: 200 });
   } catch (error) {
-    console.error('Error reading from KV:', error);
-    return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
+    console.warn('Error reading file or file not found:', error);
+    return NextResponse.json([], { status: 200 }); // Return empty array if no file exists
   }
 }
